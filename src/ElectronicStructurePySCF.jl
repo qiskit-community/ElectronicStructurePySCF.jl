@@ -1,50 +1,24 @@
-module ElectronicStructurePySCF
-
 using ElectronicStructure: Atom, Geometry, MolecularData, MolecularSpec
+import ElectronicStructure: to_pyscf
+
 import PyCall
 using PyCall: PyObject
 
 export PyMol, PySCF
-export to_pyscf, hartree_fock!
+export hartree_fock!
 
 ## In order to make this a global const it is defined outside the
 ## try/catch block. See the `PyCall` documentation for this idiom.
-const pyscf = PyCall.PyNULL()
+const _PYSCF = PyCall.PyNULL()
 
 function __init__()
     try
-        copy!(pyscf, PyCall.pyimport("pyscf"))
+        copy!(_PYSCF, PyCall.pyimport("pyscf"))
     catch
         error("Unable to load python module pyscf.")
     end
 end
 
-"""
-    to_pyscf(atom::Atom)
-
-Convert `atom` to pyscf geometry string for a single atom (or component).
-
-# Examples
-```jldoctest
-julia> to_pyscf(Atom(:Li, (0.0, 0.0, 1.4)))
-"Li 0.0 0.0 1.4"
-```
-"""
-to_pyscf(atom::Atom) = string(atom.species, " ", join(string.(atom.coords), " "))
-
-"""
-    to_pyscf(geom::Geometry)
-
-Convert `geom` to pyscf geometry string, a semi-colon separated list of specifications of
-species and their positions.
-
-# Examples
-```jldoctest
-julia> to_pyscf(Geometry(Atom(:H, (0., 0., 0.)), Atom(:H, (0., 0., 0.7414))))
-"H 0.0 0.0 0.0;H 0.0 0.0 0.7414"
-```
-"""
-to_pyscf(geom::Geometry) = join((to_pyscf(atom) for atom in geom), ";")
 
 """
     to_pyscf(mol_data::MolecularSpec)
@@ -52,7 +26,7 @@ to_pyscf(geom::Geometry) = join((to_pyscf(atom) for atom in geom), ";")
 Convert `mol_data` to a `pyscf` python `Mol` object, and call the `Mol.build()` method.
 """
 function to_pyscf(md::MolecularSpec)
-    pymol = pyscf.gto.Mole(atom=to_pyscf(md.geometry), basis=md.basis)
+    pymol = _PYSCF.gto.Mole(atom=to_pyscf(md.geometry), basis=md.basis)
     pymol.spin = md.spin
     pymol.charge = md.charge
     pymol.symmetry = false
@@ -99,9 +73,9 @@ end
 
 function PySCF(pymol::PyMol)
     if pymol.pymol.spin != 0  # from OpenFermion
-        pyscf_scf = pyscf.scf.ROHF(pymol.pymol)
+        pyscf_scf = _PYSCF.scf.ROHF(pymol.pymol)
     else
-        pyscf_scf = pyscf.scf.RHF(pymol.pymol)
+        pyscf_scf = _PYSCF.scf.RHF(pymol.pymol)
     end
     return PySCF(pyscf_scf)
 end
@@ -150,10 +124,10 @@ and transforms them to MO integrals. The integrals are indexed in chemists'
 order.
 """
 function two_electron_integrals(pymol::PyMol, scf::PySCF)
-    two_electron_compressed = pyscf.ao2mo.kernel(pymol.pymol, scf.scf.mo_coeff)
+    two_electron_compressed = _PYSCF.ao2mo.kernel(pymol.pymol, scf.scf.mo_coeff)
     n_orbitals = size(scf.scf.mo_coeff)[2]
     symmetry_code = 1 # No permutation symmetry
-    return pyscf.ao2mo.restore(symmetry_code, two_electron_compressed, n_orbitals)
+    return _PYSCF.ao2mo.restore(symmetry_code, two_electron_compressed, n_orbitals)
 end
 
 ## See OpenFermion molecular_data.py
@@ -176,5 +150,3 @@ function MolecularData(::Type{PySCF}, mol_spec::MolecularSpec)
     return MolecularData(mol_spec, nuclear_repulsion, one_e_ints, two_e_ints)
 end
 
-
-end
